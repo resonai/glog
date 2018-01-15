@@ -51,6 +51,8 @@
 #include "base/googleinit.h"
 
 using std::string;
+using std::chrono::duration_cast;
+using std::chrono::system_clock;
 
 _START_GOOGLE_NAMESPACE_
 
@@ -218,9 +220,15 @@ int64 UsecToCycles(int64 usec) {
   return usec;
 }
 
-WallTime WallTime_Now() {
-  // Now, cycle clock is retuning microseconds since the epoch.
-  return CycleClock_Now() * 0.000001;
+void SystemClockTimePointToTm(const system_clock::time_point& tp,
+                              ::tm* time_tm, unsigned* usecs) {
+  time_t time = system_clock::to_time_t(tp);
+  ::tm* t_tm = std::localtime(&time);
+  assert(time_tm);
+  memcpy(time_tm, t_tm, sizeof(*t_tm));
+  auto usec = duration_cast<std::chrono::microseconds>(tp.time_since_epoch()) -
+    duration_cast<std::chrono::seconds>(tp.time_since_epoch());
+  *usecs = usec.count();
 }
 
 static int32 g_main_thread_pid = getpid();

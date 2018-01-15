@@ -76,6 +76,8 @@ using std::dec;
 using std::min;
 using std::ostream;
 using std::ostringstream;
+using std::chrono::duration_cast;
+using std::chrono::system_clock;
 
 using std::FILE;
 using std::fwrite;
@@ -349,8 +351,7 @@ struct LogMessage::LogMessageData  {
     std::vector<std::string>* outvec_; // NULL or vector to push message onto
     std::string* message_;             // NULL or string to write message into
   };
-  time_t timestamp_;            // Time of creation of LogMessage
-  struct ::tm tm_time_;         // Time of creation of LogMessage
+  system_clock::time_point timestamp_;  // Time of creation of LogMessage
   size_t num_prefix_chars_;     // # of chars of prefix in this message
   size_t num_chars_to_log_;     // # of chars of msg to send to log
   size_t num_chars_to_syslog_;  // # of chars of msg to send to syslog
@@ -403,7 +404,7 @@ class LogFileObject : public base::Logger {
   ~LogFileObject();
 
   virtual void Write(bool force_flush, // Should we force a flush here?
-                     time_t timestamp,  // Timestamp for this entry
+                     const system_clock::time_point& timestamp,
                      const char* message,
                      int message_len);
 
@@ -491,22 +492,22 @@ class LogDestination {
   // Take a log message of a particular severity and log it to stderr
   // iff it's of a high enough severity to deserve it.
   static void MaybeLogToStderr(LogSeverity severity, const char* message,
-			       size_t len);
+			                         size_t len);
 
   // Take a log message of a particular severity and log it to email
   // iff it's of a high enough severity to deserve it.
   static void MaybeLogToEmail(LogSeverity severity, const char* message,
-			      size_t len);
+			                        size_t len);
   // Take a log message of a particular severity and log it to a file
   // iff the base filename is not "" (which means "don't log to me")
   static void MaybeLogToLogfile(LogSeverity severity,
-                                time_t timestamp,
-				const char* message, size_t len);
+                                const system_clock::time_point& timestamp,
+				                        const char* message, size_t len);
   // Take a log message of a particular severity and log it to the file
   // for that severity and also for all files with severity less than
   // this severity.
   static void LogToAllLogfiles(LogSeverity severity,
-                               time_t timestamp,
+                               const system_clock::time_point& timestamp,
                                const char* message, size_t len);
 
   // Send logging info to all registered sinks.
@@ -514,7 +515,7 @@ class LogDestination {
                          const char *full_filename,
                          const char *base_filename,
                          int line,
-                         const struct ::tm* tm_time,
+                         const system_clock::time_point& timestamp,
                          const char* message,
                          size_t message_len);
 
@@ -756,7 +757,7 @@ inline void LogDestination::MaybeLogToEmail(LogSeverity severity,
 
 
 inline void LogDestination::MaybeLogToLogfile(LogSeverity severity,
-                                              time_t timestamp,
+                const system_clock::time_point& timestamp,
 					      const char* message,
 					      size_t len) {
   const bool should_flush = severity > FLAGS_logbuflevel;
@@ -765,9 +766,9 @@ inline void LogDestination::MaybeLogToLogfile(LogSeverity severity,
 }
 
 inline void LogDestination::LogToAllLogfiles(LogSeverity severity,
-                                             time_t timestamp,
-                                             const char* message,
-                                             size_t len) {
+                const system_clock::time_point& timestamp,
+                const char* message,
+                size_t len) {
 
   if ( FLAGS_logtostderr ) {           // global flag: never log to file
     ColoredWriteToStderr(severity, message, len);
@@ -781,14 +782,14 @@ inline void LogDestination::LogToSinks(LogSeverity severity,
                                        const char *full_filename,
                                        const char *base_filename,
                                        int line,
-                                       const struct ::tm* tm_time,
+                                       const system_clock::time_point& timestamp,
                                        const char* message,
                                        size_t message_len) {
   ReaderMutexLock l(&sink_mutex_);
   if (sinks_) {
     for (int i = sinks_->size() - 1; i >= 0; i--) {
       (*sinks_)[i]->send(severity, full_filename, base_filename,
-                         line, tm_time, message, message_len);
+                         line, timestamp, message, message_len);
     }
   }
 }
@@ -962,7 +963,7 @@ bool LogFileObject::CreateLogfile(const string& time_pid_string) {
 }
 
 void LogFileObject::Write(bool force_flush,
-                          time_t timestamp,
+                          const system_clock::time_point& timestamp,
                           const char* message,
                           int message_len) {
   MutexLock l(&lock_);
@@ -988,8 +989,8 @@ void LogFileObject::Write(bool force_flush,
     if (++rollover_attempt_ != kRolloverAttemptFrequency) return;
     rollover_attempt_ = 0;
 
-    struct ::tm tm_time;
-    localtime_r(&timestamp, &tm_time);
+    time_t time = system_clock::to_time_t(system_clock::now());
+    struct ::tm& tm_time = *(std::localtime(&time));
 
     // The logfile's filename will have the date/time & pid in it
     ostringstream time_pid_stream;
@@ -1220,11 +1221,12 @@ void LogMessage::Init(const char* file,
   data_->send_method_ = send_method;
   data_->sink_ = NULL;
   data_->outvec_ = NULL;
-  WallTime now = WallTime_Now();
-  data_->timestamp_ = static_cast<time_t>(now);
-  localtime_r(&data_->timestamp_, &data_->tm_time_);
-  int usecs = static_cast<int>((now - data_->timestamp_) * 1000000);
-  RawLog__SetLastTime(data_->tm_time_, usecs);
+  data_->timestamp_ = system_clock::now();
+
+  ::tm tm_time;
+  unsigned usecs;
+  SystemClockTimePointToTm(data_->timestamp_, &tm_time, &usecs);
+  RawLog__SetLastTime(tm_time, usecs);
 
   data_->num_chars_to_log_ = 0;
   data_->num_chars_to_syslog_ = 0;
@@ -1237,13 +1239,14 @@ void LogMessage::Init(const char* file,
   //    (log level, GMT month, date, time, thread_id, file basename, line)
   // We exclude the thread_id for the default thread.
   if (FLAGS_log_prefix && (line != kNoLogPrefix)) {
+
     stream() << LogSeverityNames[severity][0]
-             << setw(2) << 1+data_->tm_time_.tm_mon
-             << setw(2) << data_->tm_time_.tm_mday
+             << setw(2) << 1+tm_time.tm_mon
+             << setw(2) << tm_time.tm_mday
              << ' '
-             << setw(2) << data_->tm_time_.tm_hour  << ':'
-             << setw(2) << data_->tm_time_.tm_min   << ':'
-             << setw(2) << data_->tm_time_.tm_sec   << "."
+             << setw(2) << tm_time.tm_hour  << ':'
+             << setw(2) << tm_time.tm_min   << ':'
+             << setw(2) << tm_time.tm_sec   << "."
              << setw(6) << usecs
              << ' '
              << setfill(' ') << setw(5)
@@ -1336,7 +1339,7 @@ void LogMessage::Flush() {
 // Copy of first FATAL log message so that we can print it out again
 // after all the stack traces.  To preserve legacy behavior, we don't
 // use fatal_msg_data_exclusive.
-static time_t fatal_time;
+static system_clock::time_point fatal_time;
 static char fatal_message[256];
 
 void ReprintFatalMessage() {
@@ -1378,7 +1381,7 @@ void LogMessage::SendToLog() EXCLUSIVE_LOCKS_REQUIRED(log_mutex) {
     // this could be protected by a flag if necessary.
     LogDestination::LogToSinks(data_->severity_,
                                data_->fullname_, data_->basename_,
-                               data_->line_, &data_->tm_time_,
+                               data_->line_, data_->timestamp_,
                                data_->message_text_ + data_->num_prefix_chars_,
                                (data_->num_chars_to_log_ -
                                 data_->num_prefix_chars_ - 1));
@@ -1395,7 +1398,7 @@ void LogMessage::SendToLog() EXCLUSIVE_LOCKS_REQUIRED(log_mutex) {
                                     data_->num_chars_to_log_);
     LogDestination::LogToSinks(data_->severity_,
                                data_->fullname_, data_->basename_,
-                               data_->line_, &data_->tm_time_,
+                               data_->line_, data_->timestamp_,
                                data_->message_text_ + data_->num_prefix_chars_,
                                (data_->num_chars_to_log_
                                 - data_->num_prefix_chars_ - 1));
@@ -1420,10 +1423,11 @@ void LogMessage::SendToLog() EXCLUSIVE_LOCKS_REQUIRED(log_mutex) {
       fatal_time = data_->timestamp_;
     }
 
+    system_clock::time_point tp = system_clock::now();
     if (!FLAGS_logtostderr) {
       for (int i = 0; i < NUM_SEVERITIES; ++i) {
         if ( LogDestination::log_destinations_[i] )
-          LogDestination::log_destinations_[i]->logger_->Write(true, 0, "", 0);
+          LogDestination::log_destinations_[i]->logger_->Write(true, tp, "", 0);
       }
     }
 
@@ -1494,7 +1498,7 @@ void LogMessage::SendToSink() EXCLUSIVE_LOCKS_REQUIRED(log_mutex) {
     RAW_DCHECK(data_->num_chars_to_log_ > 0 &&
                data_->message_text_[data_->num_chars_to_log_-1] == '\n', "");
     data_->sink_->send(data_->severity_, data_->fullname_, data_->basename_,
-                       data_->line_, &data_->tm_time_,
+                       data_->line_, data_->timestamp_,
                        data_->message_text_ + data_->num_prefix_chars_,
                        (data_->num_chars_to_log_ -
                         data_->num_prefix_chars_ - 1));
@@ -1623,24 +1627,22 @@ void LogSink::WaitTillSent() {
 }
 
 string LogSink::ToString(LogSeverity severity, const char* file, int line,
-                         const struct ::tm* tm_time,
+                         const system_clock::time_point& timestamp,
                          const char* message, size_t message_len) {
   ostringstream stream(string(message, message_len));
   stream.fill('0');
 
-  // FIXME(jrvb): Updating this to use the correct value for usecs
-  // requires changing the signature for both this method and
-  // LogSink::send().  This change needs to be done in a separate CL
-  // so subclasses of LogSink can be updated at the same time.
-  int usecs = 0;
+  ::tm tm_time;
+  unsigned usecs;
+  SystemClockTimePointToTm(timestamp, &tm_time, &usecs);
 
   stream << LogSeverityNames[severity][0]
-         << setw(2) << 1+tm_time->tm_mon
-         << setw(2) << tm_time->tm_mday
+         << setw(2) << 1+tm_time.tm_mon
+         << setw(2) << tm_time.tm_mday
          << ' '
-         << setw(2) << tm_time->tm_hour << ':'
-         << setw(2) << tm_time->tm_min << ':'
-         << setw(2) << tm_time->tm_sec << '.'
+         << setw(2) << tm_time.tm_hour << ':'
+         << setw(2) << tm_time.tm_min << ':'
+         << setw(2) << tm_time.tm_sec << '.'
          << setw(6) << usecs
          << ' '
          << setfill(' ') << setw(5) << GetTID() << setfill('0')

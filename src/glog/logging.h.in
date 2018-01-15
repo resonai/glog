@@ -36,6 +36,7 @@
 #ifndef _LOGGING_H_
 #define _LOGGING_H_
 
+#include <chrono>
 #include <errno.h>
 #include <string.h>
 #include <time.h>
@@ -1424,7 +1425,7 @@ class GOOGLE_GLOG_DLL_DECL LogSink {
   // during this call.
   virtual void send(LogSeverity severity, const char* full_filename,
                     const char* base_filename, int line,
-                    const struct ::tm* tm_time,
+                    const std::chrono::system_clock::time_point& time,
                     const char* message, size_t message_len) = 0;
 
   // Redefine this to implement waiting for
@@ -1445,7 +1446,7 @@ class GOOGLE_GLOG_DLL_DECL LogSink {
   // Returns the normal text output of the log message.
   // Can be useful to implement send().
   static std::string ToString(LogSeverity severity, const char* file, int line,
-                              const struct ::tm* tm_time,
+                              const std::chrono::system_clock::time_point& time,
                               const char* message, size_t message_len);
 };
 
@@ -1551,7 +1552,7 @@ class GOOGLE_GLOG_DLL_DECL Logger {
   // textual log messages already contain timestamps, and the
   // file:linenumber header.
   virtual void Write(bool force_flush,
-                     time_t timestamp,
+                     const std::chrono::system_clock::time_point& timestamp,
                      const char* message,
                      int message_len) = 0;
 

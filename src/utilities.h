@@ -78,6 +78,8 @@
 # include "port.h"
 #endif
 
+#include <chrono>
+
 #include "config.h"
 #include "glog/logging.h"
 
@@ -155,8 +157,8 @@ int64 CycleClock_Now();
 
 int64 UsecToCycles(int64 usec);
 
-typedef double WallTime;
-WallTime WallTime_Now();
+void SystemClockTimePointToTm(const std::chrono::system_clock::time_point& tp,
+                              ::tm* time_tm, unsigned* usecs);
 
 int32 GetMainThreadPid();
 bool PidHasChanged();

@@ -80,7 +80,7 @@ using GOOGLE_NAMESPACE::glog_testing::ScopedMockLog;
 
 using namespace std;
 using namespace GOOGLE_NAMESPACE;
-
+using std::chrono::system_clock;
 // Some non-advertised functions that we want to test or use.
 _START_GOOGLE_NAMESPACE_
 namespace base {
@@ -479,10 +479,10 @@ class TestLogSinkImpl : public LogSink {
   vector<string> errors;
   virtual void send(LogSeverity severity, const char* /* full_filename */,
                     const char* base_filename, int line,
-                    const struct tm* tm_time,
+                    const system_clock::time_point& timestamp,
                     const char* message, size_t message_len) {
     errors.push_back(
-      ToString(severity, base_filename, line, tm_time, message, message_len));
+      ToString(severity, base_filename, line, timestamp, message, message_len));
   }
 };
 
@@ -730,7 +730,7 @@ struct MyLogger : public base::Logger {
   string data;
 
   virtual void Write(bool /* should_flush */,
-                     time_t /* timestamp */,
+                     const system_clock::time_point& /* timestamp */,
                      const char* message,
                      int length) {
     data.append(message, length);
@@ -1000,14 +1000,14 @@ class TestWaitingLogSink : public LogSink {
 
   virtual void send(LogSeverity severity, const char* /* full_filename */,
                     const char* base_filename, int line,
-                    const struct tm* tm_time,
+                    const system_clock::time_point& timestamp,
                     const char* message, size_t message_len) {
     // Push it to Writer thread if we are the original logging thread.
     // Note: Something like ThreadLocalLogSink is a better choice
     //       to do thread-specific LogSink logic for real.
     if (pthread_equal(tid_, pthread_self())) {
       writer_.Buffer(ToString(severity, base_filename, line,
-                              tm_time, message, message_len));
+                              timestamp, message, message_len));
     }
   }
   virtual void WaitTillSent() {

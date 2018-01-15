@@ -1555,7 +1555,7 @@ class GOOGLE_GLOG_DLL_DECL Logger {
   // textual log messages already contain timestamps, and the
   // file:linenumber header.
   virtual void Write(bool force_flush,
-                     time_t timestamp,
+                     const std::chrono::system_clock::time_point& timestamp,
                      const char* message,
                      int message_len) = 0;
 
