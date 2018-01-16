@@ -492,17 +492,17 @@ class LogDestination {
   // Take a log message of a particular severity and log it to stderr
   // iff it's of a high enough severity to deserve it.
   static void MaybeLogToStderr(LogSeverity severity, const char* message,
-			                         size_t len);
+			       size_t len);
 
   // Take a log message of a particular severity and log it to email
   // iff it's of a high enough severity to deserve it.
   static void MaybeLogToEmail(LogSeverity severity, const char* message,
-			                        size_t len);
+			      size_t len);
   // Take a log message of a particular severity and log it to a file
   // iff the base filename is not "" (which means "don't log to me")
   static void MaybeLogToLogfile(LogSeverity severity,
                                 const system_clock::time_point& timestamp,
-				                        const char* message, size_t len);
+				const char* message, size_t len);
   // Take a log message of a particular severity and log it to the file
   // for that severity and also for all files with severity less than
   // this severity.
@@ -757,7 +757,7 @@ inline void LogDestination::MaybeLogToEmail(LogSeverity severity,
 
 
 inline void LogDestination::MaybeLogToLogfile(LogSeverity severity,
-                const system_clock::time_point& timestamp,
+                                              const system_clock::time_point&timestamp,
 					      const char* message,
 					      size_t len) {
   const bool should_flush = severity > FLAGS_logbuflevel;
@@ -766,9 +766,9 @@ inline void LogDestination::MaybeLogToLogfile(LogSeverity severity,
 }
 
 inline void LogDestination::LogToAllLogfiles(LogSeverity severity,
-                const system_clock::time_point& timestamp,
-                const char* message,
-                size_t len) {
+                                             const system_clock::time_point& timestamp,
+                                             const char* message,
+                                             size_t len) {
 
   if ( FLAGS_logtostderr ) {           // global flag: never log to file
     ColoredWriteToStderr(severity, message, len);
